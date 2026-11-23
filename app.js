@@ -113,6 +113,12 @@ const liveTx = () => live(DATA.tx);
 const liveCats = () => live(DATA.cats).sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind) || a.name.localeCompare(b.name));
 const kindOrder = k => ({ expense: 0, income: 1, transfer: 2 }[k] ?? 3);
 const cat = id => (id && DATA.cats[id] && !DATA.cats[id].del) ? DATA.cats[id] : null;
+// subcategories: one level deep (e.g. Beauty › Hairdresser)
+const parentOf = c => { const p = c && cat(c.parent); return p && !p.parent ? p : null; };
+const topId = id => { const c = cat(id); return c ? (parentOf(c)?.id || c.id) : null; };
+const fullName = c => { const p = parentOf(c); return p ? `${p.name} › ${c.name}` : c.name; };
+const childrenOf = id => live(DATA.cats).filter(c => c.parent === id).sort((a, b) => a.name.localeCompare(b.name));
+const orderedCats = () => liveCats().filter(c => !parentOf(c)).flatMap(c => [c, ...childrenOf(c.id)]);
 
 function mergeMaps(a = {}, b = {}) {
   const out = { ...a };
@@ -453,8 +459,8 @@ function catOptions(selected, { none = true, all = false } = {}) {
   let h = all ? '<option value="all">All categories</option><option value="__none">⚠ Uncategorised</option>' : '';
   if (none) h += '<option value="">— Uncategorised —</option>';
   for (const [k, lbl] of Object.entries(groups)) {
-    const cs = liveCats().filter(c => c.kind === k);
-    if (cs.length) h += `<optgroup label="${lbl}">` + cs.map(c => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(c.name)}</option>`).join('') + '</optgroup>';
+    const cs = orderedCats().filter(c => c.kind === k);
+    if (cs.length) h += `<optgroup label="${lbl}">` + cs.map(c => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(fullName(c))}</option>`).join('') + '</optgroup>';
   }
   return h;
 }
@@ -472,15 +478,15 @@ function periodOptions(sel, withAll) {
 const inPeriod = (t, p) => p === 'all' || t.date.startsWith(p);
 
 function chip(c) {
-  return c ? `<span class="chip"><span class="dot" style="background:${esc(c.color)}"></span>${esc(c.name)}</span>`
+  return c ? `<span class="chip"><span class="dot" style="background:${esc(c.color)}"></span>${esc(fullName(c))}</span>`
     : '<span class="chip none">Uncategorised</span>';
 }
 
 function filteredTx() {
   const q = fold(F.q.trim());
   return liveTx().filter(t => inPeriod(t, F.period)
-    && (F.cat === 'all' || (F.cat === '__none' ? !cat(t.cat) : t.cat === F.cat))
-    && (!q || fold(`${t.merchant} ${t.desc} ${t.type} ${t.note} ${t.details} ${cat(t.cat)?.name || ''}`).includes(q)))
+    && (F.cat === 'all' || (F.cat === '__none' ? !cat(t.cat) : (t.cat === F.cat || topId(t.cat) === F.cat)))
+    && (!q || fold(`${t.merchant} ${t.desc} ${t.type} ${t.note} ${t.details} ${cat(t.cat) ? fullName(cat(t.cat)) : ''}`).includes(q)))
     .sort((a, b) => b.date.localeCompare(a.date) || (b.ua || 0) - (a.ua || 0));
 }
 
@@ -518,24 +524,29 @@ function renderAdd() {
 
 // summary
 function totals(p) {
-  const exp = {}, inc = {}; let tin = 0, tout = 0;
+  const exp = {}, inc = {}, sub = {}; let tin = 0, tout = 0;
   for (const t of liveTx()) {
     if (!inPeriod(t, p)) continue;
     const c = cat(t.cat);
     if (c?.kind === 'transfer') continue;
-    const key = c ? c.id : '__none';
-    if (t.amount < 0 || c?.kind === 'expense') { exp[key] = (exp[key] || 0) - t.amount; tout -= t.amount; } // refunds reduce their expense category
-    else { inc[key] = (inc[key] || 0) + t.amount; tin += t.amount; }
+    const key = c ? topId(c.id) : '__none';
+    const v = (t.amount < 0 || c?.kind === 'expense') ? -t.amount : t.amount;
+    if (t.amount < 0 || c?.kind === 'expense') { exp[key] = (exp[key] || 0) + v; tout += v; } // refunds reduce their expense category
+    else { inc[key] = (inc[key] || 0) + v; tin += v; }
+    if (c && key !== c.id || (c && childrenOf(c.id).length)) { const s2 = sub[key] ||= {}; s2[c.id] = (s2[c.id] || 0) + v; }
   }
-  return { exp, inc, tin, tout };
+  return { exp, inc, sub, tin, tout };
 }
-function bars(el, obj, p) {
+function bars(el, obj, p, sub = {}) {
   const rows = Object.entries(obj).filter(([, v]) => Math.abs(v) >= 0.005).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...rows.map(r => r[1]), 1);
   el.innerHTML = rows.length ? rows.map(([id, v]) => {
     const c = cat(id), color = c?.color || '#c0392b';
     return `<div class="b" data-cat="${esc(id)}" data-p="${esc(p)}"><div class="lbl"><span class="dot" style="background:${esc(color)}"></span>${esc(c?.name || '⚠ Uncategorised')}</div>
-      <div class="track"><div class="fill" style="width:${Math.max(0, v / max * 100).toFixed(1)}%;background:${esc(color)}"></div></div><div class="val">${money(v)}</div></div>`;
+      <div class="track"><div class="fill" style="width:${Math.max(0, v / max * 100).toFixed(1)}%;background:${esc(color)}"></div></div><div class="val">${money(v)}</div></div>` +
+      Object.entries(sub[id] || {}).filter(([, x]) => Math.abs(x) >= 0.005).sort((a, b) => b[1] - a[1]).map(([cid, x]) =>
+        `<div class="b subb" data-cat="${esc(cid)}" data-p="${esc(p)}"><div class="lbl">↳ ${esc(cid === id ? 'Other ' + (c?.name || '') : cat(cid)?.name || '')}</div>
+        <div class="track"><div class="fill" style="width:${Math.max(0, x / max * 100).toFixed(1)}%;background:${esc(color)};opacity:.55"></div></div><div class="val">${money(x)}</div></div>`).join('');
   }).join('') : '<p class="muted">Nothing in this period.</p>';
 }
 let SP = null;
@@ -546,7 +557,7 @@ function renderSummary() {
   const T = totals(SP);
   $('#kIn').textContent = money(T.tin); $('#kOut').textContent = money(T.tout);
   const net = T.tin - T.tout; $('#kNet').textContent = money(net); $('#kNet').className = 'v ' + (net >= 0 ? 'pos' : 'neg');
-  bars($('#sCats'), T.exp, SP); bars($('#sInc'), T.inc, SP);
+  bars($('#sCats'), T.exp, SP, T.sub); bars($('#sInc'), T.inc, SP, T.sub);
   const last = ms.slice(0, 12).reverse();
   const tr = last.map(m => ({ m, ...totals(m) }));
   const max = Math.max(1, ...tr.map(x => Math.max(x.tin, x.tout)));
@@ -567,10 +578,22 @@ function renderSettings() {
   $('#encOff').classList.toggle('hidden', !S.passphrase);
 
   const kinds = { expense: 'Expense', income: 'Income', transfer: 'Transfer' };
-  $('#catList').innerHTML = liveCats().map(c => `<div class="it" data-id="${esc(c.id)}">
+  const tops = liveCats().filter(c => !parentOf(c));
+  $('#catList').innerHTML = orderedCats().map(c => {
+    const isSub = !!parentOf(c), hasKids = childrenOf(c.id).length > 0;
+    // one drop-down: main category of a kind, or inside another main category
+    const place = `<select data-k="place" title="Type, or which main category it belongs to">${
+      Object.entries(kinds).map(([k, l]) => `<option value="kind:${k}"${!isSub && k === c.kind ? ' selected' : ''}>${l}</option>`).join('')}${
+      hasKids ? '' : '<optgroup label="Subcategory of">' + tops.filter(t => t.id !== c.id).map(t => `<option value="parent:${esc(t.id)}"${t.id === c.parent ? ' selected' : ''}>in ${esc(t.name)}</option>`).join('') + '</optgroup>'}</select>`;
+    return `<div class="it${isSub ? ' sub' : ''}" data-id="${esc(c.id)}">
     <input type="color" value="${esc(c.color)}" data-k="color"><input type="text" value="${esc(c.name)}" data-k="name">
-    <select data-k="kind">${Object.entries(kinds).map(([k, l]) => `<option value="${k}"${k === c.kind ? ' selected' : ''}>${l}</option>`).join('')}</select>
-    <button class="x" data-del="cat" title="Delete" type="button">✕</button></div>`).join('');
+    ${place}
+    <button class="x" data-del="cat" title="Delete" type="button">✕</button></div>`;
+  }).join('');
+  const pv = $('#catNewParent').value;
+  $('#catNewParent').innerHTML = '<option value="">as a main category</option>' + tops.map(t => `<option value="${esc(t.id)}">inside ${esc(t.name)}</option>`).join('');
+  $('#catNewParent').value = tops.some(t => t.id === pv) ? pv : '';
+  $('#catNewKind').classList.toggle('hidden', !!$('#catNewParent').value);
   $('#ruleNewCat').innerHTML = catOptions('', { none: false });
   const rules = live(DATA.rules).sort((a, b) => (cat(a.cat)?.name || '').localeCompare(cat(b.cat)?.name || '') || a.pattern.localeCompare(b.pattern));
   $('#ruleList').innerHTML = rules.map(r => `<div class="it" data-id="${esc(r.id)}">
@@ -639,10 +662,11 @@ function download(name, text, type) {
 }
 function exportCsv() {
   const q = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-  const rows = [['Date', 'Description', 'Details', 'Type', 'Amount', 'Currency', 'Category', 'Category kind', 'Note', 'Source']];
+  const rows = [['Date', 'Description', 'Details', 'Type', 'Amount', 'Currency', 'Main category', 'Subcategory', 'Category kind', 'Note', 'Source']];
   for (const t of liveTx().sort((a, b) => a.date.localeCompare(b.date))) {
     const c = cat(t.cat);
-    rows.push([t.date, t.merchant, t.desc, t.type, t.amount.toFixed(2), t.currency, c?.name || '', c?.kind || '', t.note, t.src]);
+    const pc = parentOf(c);
+    rows.push([t.date, t.merchant, t.desc, t.type, t.amount.toFixed(2), t.currency, pc ? pc.name : (c?.name || ''), pc ? c.name : '', c?.kind || '', t.note, t.src]);
   }
   download(`transactions_${todayStr()}.csv`, '﻿' + rows.map(r => r.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8');
 }
@@ -731,7 +755,14 @@ function bind() {
     const it = e.target.closest('.it'), c = DATA.cats[it.dataset.id], k = e.target.dataset.k;
     if (!c || !k) return;
     const v = e.target.value.trim(); if (k === 'name' && !v) { renderSettings(); return; }
-    c[k] = v; c.ua = now(); await commit();
+    const ts = now();
+    if (k === 'place') {
+      const [what, val] = [v.slice(0, v.indexOf(':')), v.slice(v.indexOf(':') + 1)];
+      if (what === 'parent') { const p = cat(val); c.parent = p.id; c.kind = p.kind; }
+      else { c.parent = null; c.kind = val; for (const ch of childrenOf(c.id)) { ch.kind = val; ch.ua = ts; } }
+    } else c[k] = v;
+    c.ua = ts;
+    await commit();
   });
   $('#catList').addEventListener('click', async e => {
     if (!e.target.dataset.del) return;
@@ -739,6 +770,7 @@ function bind() {
     const used = liveTx().filter(t => t.cat === c.id).length;
     if (!confirm(`Delete category "${c.name}"?${used ? ` ${used} transactions will become uncategorised.` : ''}`)) return;
     const ts = now(); c.del = true; c.ua = ts;
+    for (const ch of childrenOf(c.id)) { ch.parent = null; ch.ua = ts; }   // subcategories become main categories
     for (const t of liveTx()) if (t.cat === c.id) { t.cat = null; t.ua = ts; }
     for (const r of live(DATA.rules)) if (r.cat === c.id) { r.del = true; r.ua = ts; }
     await commit();
@@ -747,8 +779,13 @@ function bind() {
     const name = $('#catNew').value.trim(); if (!name) return;
     const id = 'c:' + slug(name) + '-' + rid().slice(0, 4);
     const palette = ['#26a69a', '#ab47bc', '#ef6c00', '#5c6bc0', '#8d6e63', '#ec407a', '#29b6f6', '#9ccc65'];
-    DATA.cats[id] = { id, name, kind: $('#catNewKind').value, color: palette[Object.keys(DATA.cats).length % palette.length], ua: now() };
-    $('#catNew').value = ''; await commit();
+    const p = cat($('#catNewParent').value);
+    DATA.cats[id] = { id, name, kind: p ? p.kind : $('#catNewKind').value, parent: p ? p.id : null,
+      color: p ? p.color : palette[Object.keys(DATA.cats).length % palette.length], ua: now() };
+    $('#catNew').value = ''; await commit(); toast(p ? `Added ${p.name} › ${name}` : `Added ${name}`);
+  });
+  $('#catNewParent').addEventListener('change', () => $('#catNewKind').classList.toggle('hidden', !!$('#catNewParent').value));
+  $('#catNew').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('#catAdd').click(); }
   });
 
   // settings: rules

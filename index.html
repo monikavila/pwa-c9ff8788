@@ -138,9 +138,11 @@
 
     <div class="card">
       <h2>Categories</h2>
+      <p class="muted">To make a subcategory (e.g. Hairdresser inside Beauty), first add Beauty, then type Hairdresser and choose “inside Beauty”.</p>
       <div id="catList" class="editlist"></div>
       <div class="row add">
         <input id="catNew" type="text" placeholder="New category">
+        <select id="catNewParent"><option value="">as a main category</option></select>
         <select id="catNewKind"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (ignored in totals)</option></select>
         <button id="catAdd" class="btn" type="button">Add</button>
       </div>

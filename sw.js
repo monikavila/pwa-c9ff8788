@@ -1,5 +1,5 @@
 // Offline support: network first, cached copy when offline. Only the app's own files are cached, never your data.
-const CACHE = 'finances-v2';
+const CACHE = 'finances-v3';
 const ASSETS = ['./', './index.html', './style.css', './app.js', './vendor/xlsx.full.min.js',
   './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
