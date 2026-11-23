@@ -12,14 +12,11 @@ A small app for your bank transactions: import UBS (or other) Excel/CSV exports,
 
 ---
 
-## Step 1: Put the app online (GitHub Pages, free)
+## Step 1: The app is online ✅
 
-The phone needs an `https://` address. GitHub Pages hosts the page for free (the code is public, your data is not).
+Your app address: **https://monikaavila.com/finances/**
 
-1. Go to https://github.com/new and create a **public** repository named `finances`.
-2. Click **"uploading an existing file"** and drag in **everything inside this `app` folder**: `index.html`, `app.js`, `style.css`, `sw.js`, `manifest.webmanifest`, the three `.png` icons, and the `vendor` folder. **Do not upload any bank file.** Commit.
-3. Open **Settings → Pages**. Under *Build and deployment*, set Source = **Deploy from a branch**, Branch = **main**, folder **/ (root)** → **Save**.
-4. After about a minute your app is at **`https://<your-github-username>.github.io/finances/`**.
+It's hosted on GitHub Pages from the public repository https://github.com/monikavila/finances (code only, never data).
 
 ## Step 2: Create your private Dropbox "app" (about 3 minutes)
 
@@ -27,7 +24,7 @@ The phone needs an `https://` address. GitHub Pages hosts the page for free (the
 2. Choose **Scoped access** → **App folder** → name it something unique, e.g. `MyFinancesSync-2026` → **Create app**.
 3. Open the **Permissions** tab, tick **files.content.write** and **files.content.read**, then click **Submit**.
 4. Open the **Settings** tab:
-   - Under **OAuth 2 → Redirect URIs**, add exactly your app address from step 1, including the final `/`, e.g. `https://<your-github-username>.github.io/finances/` → **Add**.
+   - Under **OAuth 2 → Redirect URIs**, add exactly your app address from step 1, including the final `/`: `https://monikaavila.com/finances/` → **Add**.
    - Copy the **App key**. It isn't secret (the app uses secure PKCE login, so no app secret is needed). **Never paste the App secret anywhere.**
 
 ## Step 3: Computer
@@ -59,7 +56,7 @@ From then on, anything you add or classify on one device appears on the other wi
 
 ## Updating the app later
 
-Upload the changed files to the same GitHub repository. The app picks up the new version the next time it's opened online. Your data is not affected.
+From this `app` folder: `git commit -am "update" && git push`. The app picks up the new version the next time it's opened online. Your data is not affected.
 
 ## Testing locally
 
