@@ -186,12 +186,12 @@ const DBX_FILE = '/finances.json';
 const isStandalone = () => window.navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
 const Dbx = {
   connected: () => !!(S.appKey && S.refreshToken),
-  redirectUri: () => location.origin + location.pathname,
-  async startAuth() {
+  redirectUri: () => location.origin + location.pathname.replace(/index\.html$/, ''),
+  async startAuth(forceManual = false) {
     const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
     const challenge = b64url(await crypto.subtle.digest('SHA-256', te.encode(verifier)));
     // In the installed phone app, redirects open outside the app, so use the copy-the-code flow there.
-    const manual = isStandalone();
+    const manual = forceManual || isStandalone();
     localStorage.setItem('fin.pkce', JSON.stringify({ verifier, manual }));
     const p = new URLSearchParams({ client_id: S.appKey, response_type: 'code', code_challenge: challenge, code_challenge_method: 'S256', token_access_type: 'offline' });
     if (!manual) p.set('redirect_uri', this.redirectUri());
@@ -699,6 +699,12 @@ function bind() {
     if (!/^[a-z0-9]{8,32}$/i.test(k)) { toast('Paste the App key from your Dropbox app page'); return; }
     S.appKey = k; saveSettings();
     try { await Dbx.startAuth(); } catch (e) { toast(e.message, 5000); }
+  });
+  $('#dbxConnectCode').addEventListener('click', async () => {
+    const k = $('#dbxKey').value.trim();
+    if (!/^[a-z0-9]{8,32}$/i.test(k)) { toast('Paste the App key from your Dropbox app page'); return; }
+    S.appKey = k; saveSettings();
+    try { await Dbx.startAuth(true); } catch (e) { toast(e.message, 5000); }
   });
   $('#dbxCodeGo').addEventListener('click', async () => {
     try { await Dbx.finishAuth($('#dbxCode').value); $('#dbxManual').classList.add('hidden'); toast('Dropbox connected'); renderSettings(); await sync(); }
