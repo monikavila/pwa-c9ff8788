@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.dropboxapi.com https://content.dropboxapi.com; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1f6f5c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Finances">
+<title>Finances</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Finances</h1>
+  <button id="syncPill" class="pill" type="button" title="Sync status">Local only</button>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-view="tx" class="active" type="button"><span class="ico">☰</span><span>Transactions</span></button>
+  <button data-view="add" type="button"><span class="ico">＋</span><span>Add</span></button>
+  <button data-view="import" type="button"><span class="ico">⇪</span><span>Import</span></button>
+  <button data-view="summary" type="button"><span class="ico">◔</span><span>Summary</span></button>
+  <button data-view="settings" type="button"><span class="ico">⚙</span><span>Settings</span></button>
+</nav>
+
+<main>
+  <!-- TRANSACTIONS -->
+  <section id="view-tx" class="view active">
+    <div class="filters">
+      <input id="fSearch" type="search" placeholder="Search description, note…" autocomplete="off">
+      <select id="fPeriod"></select>
+      <select id="fCat"></select>
+    </div>
+    <div id="txInfo" class="info"></div>
+    <div id="txList" class="list"></div>
+    <button id="txMore" class="btn ghost wide hidden" type="button">Show more</button>
+  </section>
+
+  <!-- ADD -->
+  <section id="view-add" class="view">
+    <form id="addForm" class="card form">
+      <h2>Log a transaction</h2>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="addKind" value="expense" checked><span>Expense</span></label>
+        <label><input type="radio" name="addKind" value="income"><span>Income</span></label>
+      </div>
+      <label>Amount<input id="addAmount" type="text" inputmode="decimal" placeholder="0.00" required></label>
+      <label>Description<input id="addDesc" type="text" placeholder="e.g. Coffee with Ana" required></label>
+      <label>Date<input id="addDate" type="date" required></label>
+      <label>Category<select id="addCat"></select></label>
+      <label>Note<input id="addNote" type="text" placeholder="optional"></label>
+      <button class="btn primary wide" type="submit">Save</button>
+    </form>
+  </section>
+
+  <!-- IMPORT -->
+  <section id="view-import" class="view">
+    <div class="card">
+      <h2>Import bank file</h2>
+      <p class="muted">Excel (.xlsx, .xls) or CSV. UBS exports are recognised automatically; for other banks, check the column mapping below. Re-importing the same file never creates duplicates.</p>
+      <label class="file btn primary wide">Choose file…<input id="impFile" type="file" accept=".csv,.txt,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+    </div>
+    <div id="impStep2" class="card hidden">
+      <h3 id="impName"></h3>
+      <div id="impMap" class="mapgrid"></div>
+      <div id="impStats" class="info"></div>
+      <div class="tablewrap"><table id="impPreview"></table></div>
+      <button id="impGo" class="btn primary wide" type="button">Import</button>
+    </div>
+    <div id="impDone" class="card hidden"></div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="view-summary" class="view">
+    <div class="filters"><select id="sPeriod"></select></div>
+    <div class="kpis">
+      <div class="kpi"><div class="k">Income</div><div id="kIn" class="v pos"></div></div>
+      <div class="kpi"><div class="k">Expenses</div><div id="kOut" class="v neg"></div></div>
+      <div class="kpi"><div class="k">Net</div><div id="kNet" class="v"></div></div>
+    </div>
+    <div class="card">
+      <h3>Spending by category</h3>
+      <div id="sCats" class="bars"></div>
+    </div>
+    <div class="card">
+      <h3>Income by category</h3>
+      <div id="sInc" class="bars"></div>
+    </div>
+    <div class="card">
+      <h3>Last 12 months</h3>
+      <div id="sTrend" class="trend"></div>
+      <div class="legend"><span class="sw in"></span>Income <span class="sw out"></span>Expenses</div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="card">
+      <h2>Sync with Dropbox</h2>
+      <p class="muted">Your data is saved as one file in <b>Dropbox › Apps › (your app name) › finances.json</b>. Phone and computer both read and write that file. No other server is involved.</p>
+      <div id="dbxDisconnected">
+        <label>Dropbox app key<input id="dbxKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="e.g. a1b2c3d4e5f6g7h"></label>
+        <button id="dbxConnect" class="btn primary wide" type="button">Connect Dropbox</button>
+        <div id="dbxManual" class="hidden">
+          <p class="muted">After you allow access in the Dropbox window, copy the code it shows and paste it here:</p>
+          <label>Access code<input id="dbxCode" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <button id="dbxCodeGo" class="btn primary wide" type="button">Finish connecting</button>
+        </div>
+      </div>
+      <div id="dbxConnected" class="hidden">
+        <p>✅ Connected. <span id="dbxLast" class="muted"></span></p>
+        <div class="row">
+          <button id="dbxSync" class="btn" type="button">Sync now</button>
+          <button id="dbxOff" class="btn ghost" type="button">Disconnect this device</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Encryption password</h2>
+      <p class="muted">Optional but recommended. The file is encrypted on your device (AES-256) before it goes to Dropbox, so even Dropbox cannot read it. Use the <b>same password on every device</b>. If you forget it, the synced data cannot be recovered (each device keeps its own local copy).</p>
+      <p id="encState"></p>
+      <label>Password<input id="encPass" type="password" autocomplete="new-password"></label>
+      <div class="row">
+        <button id="encSet" class="btn primary" type="button">Save password</button>
+        <button id="encOff" class="btn ghost" type="button">Turn off encryption</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Categories</h2>
+      <div id="catList" class="editlist"></div>
+      <div class="row add">
+        <input id="catNew" type="text" placeholder="New category">
+        <select id="catNewKind"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer (ignored in totals)</option></select>
+        <button id="catAdd" class="btn" type="button">Add</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Auto-classification rules</h2>
+      <p class="muted">If the description contains the text, the transaction gets that category on import. Longer (more specific) texts win. Rules never overwrite a category you set yourself.</p>
+      <div id="ruleList" class="editlist"></div>
+      <div class="row add">
+        <input id="ruleNew" type="text" placeholder="Text, e.g. MIGROS">
+        <select id="ruleNewCat"></select>
+        <button id="ruleAdd" class="btn" type="button">Add</button>
+      </div>
+      <button id="ruleApply" class="btn ghost wide" type="button">Apply rules to uncategorised transactions</button>
+    </div>
+
+    <div class="card">
+      <h2>Data</h2>
+      <div class="col">
+        <button id="expCsv" class="btn" type="button">Export transactions for Excel (.csv)</button>
+        <button id="expJson" class="btn" type="button">Download full backup (.json)</button>
+        <label class="file btn">Restore / merge backup (.json)<input id="impJson" type="file" accept=".json,application/json"></label>
+        <button id="wipe" class="btn danger" type="button">Erase data on this device</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="editDlg">
+  <form method="dialog" id="editForm">
+    <h3 id="eTitle"></h3>
+    <p id="eSub" class="muted"></p>
+    <div id="eManual">
+      <label>Description<input id="eDesc" type="text"></label>
+      <label>Amount (negative = expense)<input id="eAmount" type="text" inputmode="decimal"></label>
+      <label>Date<input id="eDate" type="date"></label>
+    </div>
+    <label>Category<select id="eCat"></select></label>
+    <label>Note<input id="eNote" type="text" placeholder="optional"></label>
+    <div id="eRuleBox" class="rulebox">
+      <label class="check"><input id="eRule" type="checkbox"> Always classify transactions containing</label>
+      <input id="eRulePat" type="text">
+      <div id="eRuleCount" class="muted small"></div>
+    </div>
+    <details id="eDetails"><summary>Bank details</summary><p id="eDetailsTxt" class="small"></p></details>
+    <div class="row end">
+      <button id="eDelete" class="btn danger ghost" type="button">Delete</button>
+      <span class="grow"></span>
+      <button value="cancel" class="btn ghost" type="submit" formnovalidate>Cancel</button>
+      <button id="eSave" class="btn primary" type="button">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast"></div>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

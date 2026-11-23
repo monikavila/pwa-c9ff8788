@@ -1,0 +1,7 @@
+.claude/
+*.csv
+*.xlsx
+*.xls
+*.json
+!manifest.webmanifest
+.DS_Store
