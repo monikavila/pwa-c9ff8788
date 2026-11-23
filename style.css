@@ -135,3 +135,6 @@ details { margin: 8px 0; font-size: 13px; color: var(--muted); }
 .bars .subb { padding: 2px 0 2px 16px; }
 .bars .subb .lbl, .bars .subb .val { font-size: 12px; color: var(--muted); }
 .bars .subb .track { height: 8px; }
+.editlist .plus { border: 0; background: none; color: var(--accent); font-size: 20px; cursor: pointer; padding: 4px 6px; }
+.editlist .plus-sp { width: 32px; flex: none; }
+.editlist .it:not(.sub) input[data-k=name] { font-weight: 600; }

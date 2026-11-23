@@ -455,12 +455,20 @@ function renderAll() {
 }
 
 function catOptions(selected, { none = true, all = false } = {}) {
-  const groups = { expense: 'Expenses', income: 'Income', transfer: 'Transfers' };
+  // Big categories that have subcategories become headings: BEAUTY → Beauty (general), Hairdresser, Nails…
+  const kinds = { expense: ['Expenses', 'Other expenses'], income: ['Income', 'Other income'], transfer: ['Transfers', 'Transfers'] };
+  const opt = (c, label) => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(label)}</option>`;
   let h = all ? '<option value="all">All categories</option><option value="__none">⚠ Uncategorised</option>' : '';
   if (none) h += '<option value="">— Uncategorised —</option>';
-  for (const [k, lbl] of Object.entries(groups)) {
-    const cs = orderedCats().filter(c => c.kind === k);
-    if (cs.length) h += `<optgroup label="${lbl}">` + cs.map(c => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(fullName(c))}</option>`).join('') + '</optgroup>';
+  for (const [k, [plain, rest]] of Object.entries(kinds)) {
+    const mains = liveCats().filter(c => c.kind === k && !parentOf(c));
+    const big = mains.filter(c => childrenOf(c.id).length), single = mains.filter(c => !childrenOf(c.id).length);
+    for (const c of big) {
+      h += `<optgroup label="${esc(c.name.toUpperCase())}">` +
+        (all ? opt(c, `All ${c.name}`) : opt(c, `${c.name} (general)`)) +
+        childrenOf(c.id).map(ch => opt(ch, ch.name)).join('') + '</optgroup>';
+    }
+    if (single.length) h += `<optgroup label="${big.length ? rest : plain}">` + single.map(c => opt(c, c.name)).join('') + '</optgroup>';
   }
   return h;
 }
@@ -588,6 +596,7 @@ function renderSettings() {
     return `<div class="it${isSub ? ' sub' : ''}" data-id="${esc(c.id)}">
     <input type="color" value="${esc(c.color)}" data-k="color"><input type="text" value="${esc(c.name)}" data-k="name">
     ${place}
+    ${isSub ? '<span class="plus-sp"></span>' : `<button class="plus" data-addsub="1" title="Add a subcategory to ${esc(c.name)}" type="button">＋</button>`}
     <button class="x" data-del="cat" title="Delete" type="button">✕</button></div>`;
   }).join('');
   const pv = $('#catNewParent').value;
@@ -765,6 +774,15 @@ function bind() {
     await commit();
   });
   $('#catList').addEventListener('click', async e => {
+    if (e.target.dataset.addsub) {
+      const p = DATA.cats[e.target.closest('.it').dataset.id];
+      const name = (prompt(`New subcategory inside "${p.name}" (e.g. Hairdresser):`) || '').trim();
+      if (!name) return;
+      const id = 'c:' + slug(name) + '-' + rid().slice(0, 4);
+      if (p.parent) { p.parent = null; p.ua = now(); }
+      DATA.cats[id] = { id, name, kind: p.kind, parent: p.id, color: p.color, ua: now() };
+      await commit(); toast(`Added ${p.name} › ${name}`); return;
+    }
     if (!e.target.dataset.del) return;
     const c = DATA.cats[e.target.closest('.it').dataset.id];
     const used = liveTx().filter(t => t.cat === c.id).length;
