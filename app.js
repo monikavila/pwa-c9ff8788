@@ -1,4 +1,6 @@
 'use strict';
+// Encryption and offline mode need https: send plain-http visitors to the https address.
+if (location.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(location.hostname)) location.replace('https:' + location.href.slice(5));
 /* Finances — personal transactions app.
  * Data lives in IndexedDB on each device and (optionally) in one file in the user's Dropbox app folder,
  * optionally encrypted with AES-256-GCM. No other server is involved. */
