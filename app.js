@@ -109,7 +109,8 @@ function seedData() {
 }
 
 const live = m => Object.values(m || {}).filter(x => !x.del);
-const liveTx = () => live(DATA.tx);
+// a split payment is replaced by its parts: the original stays stored (so re-imports skip it) but is hidden
+const liveTx = () => live(DATA.tx).filter(t => !t.isSplit);
 const liveCats = () => live(DATA.cats).sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind) || a.name.localeCompare(b.name));
 const kindOrder = k => ({ expense: 0, income: 1, transfer: 2 }[k] ?? 3);
 const cat = id => (id && DATA.cats[id] && !DATA.cats[id].del) ? DATA.cats[id] : null;
@@ -517,7 +518,7 @@ function renderTx() {
   for (const t of list.slice(0, F.limit)) {
     if (t.date !== day) { day = t.date; h += `<div class="day">${esc(dayLabel(day))}</div>`; }
     h += `<div class="tx" data-id="${esc(t.id)}"><div class="main"><div class="m">${esc(t.merchant)}</div>
-      <div class="s">${chip(cat(t.cat))} ${esc(t.note || t.type || '')}</div></div>
+      <div class="s">${t.src === 'split' ? '✂︎ ' : ''}${chip(cat(t.cat))} ${esc(t.note || t.type || '')}</div></div>
       <div class="amt ${t.amount < 0 ? 'neg' : 'pos'}">${money(t.amount)}</div></div>`;
   }
   $('#txList').innerHTML = h;
@@ -627,8 +628,77 @@ function openEdit(id) {
   $('#eRulePat').value = t.merchant.toUpperCase();
   $('#eDetails').classList.toggle('hidden', !t.details);
   $('#eDetailsTxt').textContent = t.details || '';
+  // split state
+  const part = t.src === 'split', orig = part ? DATA.tx[t.parent] : null;
+  SPLITTING = false;
+  $('#eSplitBox').classList.add('hidden');
+  $('#eMainFields').classList.remove('hidden');
+  $('#eSplit').classList.toggle('hidden', part);
+  $('#eUnsplit').classList.toggle('hidden', !part);
+  $('#eDelete').classList.toggle('hidden', part);
+  if (part) {
+    $('#eRuleBox').classList.add('hidden');
+    const n = live(DATA.tx).filter(x => x.parent === t.parent).length;
+    $('#ePartInfo').innerHTML = `✂︎ Part of a split payment of <b>${money(orig?.amount ?? 0)}</b> (${n} parts).`;
+  }
+  $('#ePartInfo').classList.toggle('hidden', !part);
   updateRuleCount();
   $('#editDlg').showModal();
+}
+
+// ---------- split one payment into several categories ----------
+let SPLITTING = false;
+function partRow(amount = '', catId = '', note = '') {
+  const d = document.createElement('div'); d.className = 'part';
+  d.innerHTML = `<input class="pAmt" type="text" inputmode="decimal" placeholder="0.00" value="${esc(amount)}">
+    <select class="pCat">${catOptions(catId)}</select>
+    <input class="pNote" type="text" placeholder="note, e.g. gift for Ana" value="${esc(note)}">
+    <button class="x pDel" type="button" title="Take out this part">✕</button>`;
+  return d;
+}
+function startSplit() {
+  const t = EDIT, total = Math.abs(t.amount);
+  SPLITTING = true;
+  $('#eMainFields').classList.add('hidden');
+  $('#eRuleBox').classList.add('hidden');
+  $('#eSplit').classList.add('hidden');
+  $('#eSplitBox').classList.remove('hidden');
+  const box = $('#eParts'); box.innerHTML = '';
+  box.append(partRow(total.toFixed(2), t.cat || '', t.note || ''), partRow());
+  updateRemain();
+  box.querySelectorAll('.pAmt')[1].focus();
+}
+function partsData() {
+  return $$('#eParts .part').map(r => ({ amount: num(r.querySelector('.pAmt').value), cat: r.querySelector('.pCat').value || null, note: r.querySelector('.pNote').value.trim() }));
+}
+function updateRemain() {
+  const total = Math.abs(EDIT.amount), used = partsData().reduce((s, p) => s + Math.abs(p.amount || 0), 0);
+  const left = Math.round((total - used) * 100) / 100;
+  $('#eRemain').innerHTML = left === 0 ? '<span class="pos">✓ Parts add up to the total</span>'
+    : `<span class="neg">${left > 0 ? 'Still to assign' : 'Too much by'}: ${money(Math.abs(left))}</span>`;
+  return left;
+}
+async function saveSplit() {
+  const t = EDIT, sign = t.amount < 0 ? -1 : 1;
+  const parts = partsData().filter(p => p.amount);
+  if (parts.length < 2) { toast('Enter at least two parts'); return; }
+  if (updateRemain() !== 0) { toast('The parts must add up to ' + money(Math.abs(t.amount))); return; }
+  const ts = now();
+  parts.forEach((p, i) => {
+    const id = `${t.id}|s${i + 1}-${rid().slice(0, 6)}`;
+    DATA.tx[id] = { id, date: t.date, amount: sign * Math.abs(p.amount), currency: t.currency, merchant: t.merchant, desc: t.desc,
+      type: t.type, details: t.details, cat: p.cat, note: p.note, src: 'split', parent: t.id, ua: ts };
+  });
+  t.isSplit = true; t.ua = ts;
+  $('#editDlg').close(); await commit(); toast(`Split into ${parts.length} parts`);
+}
+async function undoSplit() {
+  const orig = DATA.tx[EDIT.parent];
+  if (!orig || !confirm('Undo the split and bring back the single original payment?')) return;
+  const ts = now();
+  for (const x of live(DATA.tx)) if (x.parent === orig.id) { x.del = true; x.ua = ts; }
+  orig.isSplit = false; orig.ua = ts;
+  $('#editDlg').close(); await commit(); toast('Split undone');
 }
 function updateRuleCount() {
   const P = fold($('#eRulePat').value.trim());
@@ -638,6 +708,7 @@ function updateRuleCount() {
   $('#eRuleCount').textContent = `Will also classify ${n} other uncategorised transaction${n === 1 ? '' : 's'}, plus future imports.`;
 }
 async function saveEdit() {
+  if (SPLITTING) return saveSplit();
   const t = EDIT, ts = now();
   if (t.src === 'manual') {
     const a = num($('#eAmount').value), d = $('#eDate').value;
@@ -647,7 +718,7 @@ async function saveEdit() {
   t.cat = $('#eCat').value || null; t.note = $('#eNote').value.trim(); t.ua = ts;
   let extra = 0;
   const pat = $('#eRulePat').value.trim();
-  if (t.src !== 'manual' && $('#eRule').checked && pat && t.cat) {
+  if (t.src === 'import' && $('#eRule').checked && pat && t.cat) {
     const id = 'r:' + slug(pat);
     DATA.rules[id] = { id, pattern: pat, cat: t.cat, ua: ts };
     const P = fold(pat);
@@ -723,6 +794,25 @@ function bind() {
   // edit dialog
   $('#eSave').addEventListener('click', saveEdit);
   $('#eDelete').addEventListener('click', deleteEdit);
+  $('#eSplit').addEventListener('click', startSplit);
+  $('#eUnsplit').addEventListener('click', undoSplit);
+  $('#eAddPart').addEventListener('click', () => {
+    const left = updateRemain(); $('#eParts').append(partRow(left > 0 ? left.toFixed(2) : '')); updateRemain();
+  });
+  $('#eParts').addEventListener('input', updateRemain);
+  $('#eParts').addEventListener('click', e => {
+    if (!e.target.classList.contains('pDel')) return;
+    if ($$('#eParts .part').length > 2) { e.target.closest('.part').replaceWith(); updateRemain(); }
+  });
+  // typing an amount in part 2+ takes it from part 1, so the total always stays right
+  $('#eParts').addEventListener('change', e => {
+    if (!e.target.classList.contains('pAmt')) return;
+    const rows = $$('#eParts .part'); if (e.target === rows[0].querySelector('.pAmt')) return;
+    const others = rows.slice(1).reduce((s, r) => s + Math.abs(num(r.querySelector('.pAmt').value) || 0), 0);
+    const first = Math.round((Math.abs(EDIT.amount) - others) * 100) / 100;
+    if (first > 0) rows[0].querySelector('.pAmt').value = first.toFixed(2);
+    updateRemain();
+  });
   $('#eRulePat').addEventListener('input', updateRuleCount);
   $('#eCat').addEventListener('change', () => { if (EDIT && EDIT.src !== 'manual' && !EDIT.cat) $('#eRule').checked = !!$('#eCat').value; updateRuleCount(); });
 

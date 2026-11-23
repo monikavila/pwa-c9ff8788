@@ -181,8 +181,16 @@
       <label>Amount (negative = expense)<input id="eAmount" type="text" inputmode="decimal"></label>
       <label>Date<input id="eDate" type="date"></label>
     </div>
-    <label>Category<select id="eCat"></select></label>
-    <label>Note<input id="eNote" type="text" placeholder="optional"></label>
+    <div id="ePartInfo" class="info hidden"></div>
+    <div id="eMainFields">
+      <label>Category<select id="eCat"></select></label>
+      <label>Note<input id="eNote" type="text" placeholder="optional"></label>
+    </div>
+    <div id="eSplitBox" class="splitbox hidden">
+      <p class="muted small">Divide this payment into parts, each with its own category. Typing an amount in a part takes it from the first part.</p>
+      <div id="eParts"></div>
+      <div class="row"><button id="eAddPart" class="btn ghost" type="button">＋ Add part</button><span class="grow"></span><span id="eRemain" class="small"></span></div>
+    </div>
     <div id="eRuleBox" class="rulebox">
       <label class="check"><input id="eRule" type="checkbox"> Always classify transactions containing</label>
       <input id="eRulePat" type="text">
@@ -191,6 +199,8 @@
     <details id="eDetails"><summary>Bank details</summary><p id="eDetailsTxt" class="small"></p></details>
     <div class="row end">
       <button id="eDelete" class="btn danger ghost" type="button">Delete</button>
+      <button id="eSplit" class="btn ghost" type="button">✂︎ Split</button>
+      <button id="eUnsplit" class="btn ghost hidden" type="button">Undo split</button>
       <span class="grow"></span>
       <button value="cancel" class="btn ghost" type="submit" formnovalidate>Cancel</button>
       <button id="eSave" class="btn primary" type="button">Save</button>
